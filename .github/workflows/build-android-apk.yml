@@ -1,0 +1,43 @@
+# 一次性构建 pi-mobile 的原生安卓 APK（本机不装 Android 工具链，交给 GitHub runner 编）
+# 来源 = jkeskikangas/pi-mobile@938d53dd 的 fork；构建要求照 native/android/README.md（JDK 21 + compileSdk 36 + 入库的 gradle wrapper 8.14.3）
+name: build-android-apk
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - ".github/workflows/build-android-apk.yml"
+      - "native/android/**"
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      # ubuntu-latest 自带 cmdline-tools；缺的平台/构建工具当场补，license 全 accept
+      - name: 备好 Android SDK 36
+        run: |
+          set -euo pipefail
+          export ANDROID_HOME="${ANDROID_HOME:-$HOME/Android/Sdk}"
+          export PATH="$ANDROID_HOME/cmdline-tools/latest/bin:$PATH"
+          yes | sdkmanager --licenses >/dev/null 2>&1 || true
+          sdkmanager --install "platform-tools" "platforms;android-36" "build-tools;36.0.0" | tail -3
+          sdkmanager --list_installed 2>/dev/null | grep -E "platforms;android-36|build-tools" || true
+
+      - name: 编 debug APK
+        working-directory: native/android
+        run: |
+          ./gradlew --no-daemon assembleDebug
+          ls -l app/build/outputs/apk/debug/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pi-mobile-debug-apk
+          path: native/android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
